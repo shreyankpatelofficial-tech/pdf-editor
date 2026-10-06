@@ -1,40 +1,61 @@
 /* ============================================================
-   PDF FORM FILLER
-   Upload → Live Preview → Overlay Edit → Download
+   PDF FORM FILLER — v2 (Fixed Alignment)
    ============================================================ */
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-/* ---------- Default field coordinates (relative %) ----------
-   These are RATIOS (0 to 1) of page width/height.
-   Works with any page size because we scale them.
-   Coordinates are for the Tempsens IPO form as reference.
-   Users can drag/type anything anyway.
+/* ---------- Default field coordinates ----------
+   xPct, yPct, wPct, hPct are 0..1 ratios of page size.
+   yPct is the TOP of the box (converted to baseline on PDF export).
+   These coordinates are tuned to the Tempsens IPO PDF (595x842 pt).
 ------------------------------------------------------------ */
 const DEFAULT_FIELDS = {
-  name:         { page: 0, xPct: 0.60, yPct: 0.115, wPct: 0.33, hPct: 0.014 },
-  address:      { page: 0, xPct: 0.60, yPct: 0.135, wPct: 0.33, hPct: 0.026 },
-  email:        { page: 0, xPct: 0.60, yPct: 0.165, wPct: 0.33, hPct: 0.014 },
-  phone:        { page: 0, xPct: 0.60, yPct: 0.180, wPct: 0.33, hPct: 0.014 },
-  pan:          { page: 0, xPct: 0.60, yPct: 0.205, wPct: 0.33, hPct: 0.014 },
-  dpid:         { page: 0, xPct: 0.02, yPct: 0.288, wPct: 0.96, hPct: 0.014 },
-  opt1_shares:  { page: 0, xPct: 0.22, yPct: 0.352, wPct: 0.09, hPct: 0.016 },
-  opt1_price:   { page: 0, xPct: 0.55, yPct: 0.352, wPct: 0.09, hPct: 0.016 },
-  amount_fig:   { page: 0, xPct: 0.02, yPct: 0.425, wPct: 0.22, hPct: 0.016 },
-  amount_words: { page: 0, xPct: 0.26, yPct: 0.425, wPct: 0.72, hPct: 0.016 },
-  asba_ac:      { page: 0, xPct: 0.10, yPct: 0.450, wPct: 0.88, hPct: 0.016 },
-  bank_name:    { page: 0, xPct: 0.10, yPct: 0.470, wPct: 0.88, hPct: 0.016 },
-  holder_name:  { page: 0, xPct: 0.10, yPct: 0.520, wPct: 0.40, hPct: 0.014 },
+  name:         { page: 0, xPct: 0.475, yPct: 0.104, wPct: 0.470, hPct: 0.011 },
+  address:      { page: 0, xPct: 0.475, yPct: 0.133, wPct: 0.470, hPct: 0.020 },
+  email:        { page: 0, xPct: 0.475, yPct: 0.163, wPct: 0.470, hPct: 0.011 },
+  phone:        { page: 0, xPct: 0.475, yPct: 0.184, wPct: 0.470, hPct: 0.011 },
+  pan:          { page: 0, xPct: 0.475, yPct: 0.211, wPct: 0.470, hPct: 0.011 },
+  dpid:         { page: 0, xPct: 0.015, yPct: 0.291, wPct: 0.970, hPct: 0.011 },
+  opt1_shares:  { page: 0, xPct: 0.220, yPct: 0.353, wPct: 0.080, hPct: 0.013 },
+  opt1_price:   { page: 0, xPct: 0.590, yPct: 0.353, wPct: 0.080, hPct: 0.013 },
+  amount_fig:   { page: 0, xPct: 0.015, yPct: 0.428, wPct: 0.220, hPct: 0.013 },
+  amount_words: { page: 0, xPct: 0.275, yPct: 0.428, wPct: 0.710, hPct: 0.013 },
+  asba_ac:      { page: 0, xPct: 0.085, yPct: 0.452, wPct: 0.900, hPct: 0.013 },
+  bank_name:    { page: 0, xPct: 0.085, yPct: 0.472, wPct: 0.900, hPct: 0.013 },
+  holder_name:  { page: 0, xPct: 0.085, yPct: 0.494, wPct: 0.400, hPct: 0.011 },
 };
 
 /* ---------- State ---------- */
-let pdfBytes = null;         // original PDF ArrayBuffer
-let pdfDoc = null;           // pdfjs document
+let pdfBytes = null;
+let pdfDoc = null;
 let scale = 1.3;
-let overlays = {};           // field id → HTMLInputElement
-let customOverlays = [];     // [{el, page, xPct, yPct}]
+let overlays = {};       // field id -> input element
+let customOverlays = [];
 let currentFileName = "form.pdf";
+
+/* ---------- Load saved positions from localStorage ---------- */
+function loadSavedCoords() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("pdfFieldCoords") || "null");
+    if (saved) {
+      Object.keys(saved).forEach((k) => {
+        if (DEFAULT_FIELDS[k]) Object.assign(DEFAULT_FIELDS[k], saved[k]);
+      });
+    }
+  } catch (e) { console.warn("Coord load failed", e); }
+}
+
+function saveCoords() {
+  const snapshot = {};
+  Object.keys(DEFAULT_FIELDS).forEach((k) => {
+    const f = DEFAULT_FIELDS[k];
+    snapshot[k] = { xPct: f.xPct, yPct: f.yPct, wPct: f.wPct, hPct: f.hPct };
+  });
+  localStorage.setItem("pdfFieldCoords", JSON.stringify(snapshot));
+}
+
+loadSavedCoords();
 
 /* ============================================================
    UPLOAD HANDLING
@@ -64,15 +85,12 @@ async function handleUpload(file) {
   currentFileName = file.name.replace(/\.pdf$/i, "") + "_filled.pdf";
   pdfBytes = await file.arrayBuffer();
 
-  // Switch screens
   document.getElementById("uploadScreen").style.display = "none";
   document.getElementById("editorScreen").style.display = "flex";
   document.getElementById("fileName").textContent = file.name;
 
-  // Load PDF
   pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
 
-  // Populate custom page selector
   const pageSelect = document.getElementById("customPage");
   pageSelect.innerHTML = "";
   for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -84,7 +102,8 @@ async function handleUpload(file) {
 
   await renderAll();
   attachDefaultOverlays();
-  document.getElementById("status").textContent = `✅ ${pdfDoc.numPages} page(s) loaded`;
+  document.getElementById("status").textContent =
+    `✅ ${pdfDoc.numPages} page(s) loaded — Alt+drag to reposition any field`;
 }
 
 /* ============================================================
@@ -119,7 +138,7 @@ async function renderAll() {
 }
 
 /* ============================================================
-   ATTACH DEFAULT OVERLAYS (from sidebar)
+   ATTACH OVERLAYS
 ============================================================ */
 function attachDefaultOverlays() {
   const wraps = document.querySelectorAll(".pdf-page-wrap");
@@ -142,10 +161,13 @@ function attachDefaultOverlays() {
     input.style.width  = (cfg.wPct * wrapW) + "px";
     input.style.height = Math.max(cfg.hPct * wrapH, 14) + "px";
 
-    // Two-way sync with sidebar
     const sidebar = document.getElementById(id);
     if (sidebar) {
-      input.addEventListener("input", () => (sidebar.value = input.value));
+      input.addEventListener("input", () => {
+        sidebar.value = input.value;
+        // grow height if text is long
+        autoGrowHeight(input, cfg);
+      });
       sidebar.addEventListener("input", () => (input.value = sidebar.value));
     }
 
@@ -153,8 +175,8 @@ function attachDefaultOverlays() {
     input.dataset.xPct = cfg.xPct;
     input.dataset.yPct = cfg.yPct;
     input.dataset.wPct = cfg.wPct;
+    input.dataset.hPct = cfg.hPct;
 
-    // Enable drag-reposition on the input's parent area (label dragging via Alt key)
     makeOverlayDraggable(input, wrap);
 
     wrap.appendChild(input);
@@ -162,51 +184,82 @@ function attachDefaultOverlays() {
   });
 }
 
-/* ---------- Make overlay movable by dragging ---------- */
+function autoGrowHeight(el, cfg) {
+  // Optionally allow multi-line growth — for now keep fixed
+}
+
+/* ---------- Alt+drag to move any field ---------- */
 function makeOverlayDraggable(el, wrap) {
-  let drag = false;
-  let startX, startY, startLeft, startTop;
+  let drag = false, resize = false;
+  let startX, startY, startLeft, startTop, startW, startH;
 
   el.addEventListener("mousedown", (e) => {
-    // Only drag if user holds Alt key (so typing still works normally)
-    if (!e.altKey) return;
-    drag = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startLeft = el.offsetLeft;
-    startTop = el.offsetTop;
-    el.style.cursor = "move";
-    e.preventDefault();
+    // Alt+drag → move
+    if (e.altKey && !e.shiftKey) {
+      drag = true;
+      startX = e.clientX; startY = e.clientY;
+      startLeft = el.offsetLeft; startTop = el.offsetTop;
+      el.style.cursor = "move";
+      e.preventDefault();
+    }
+    // Alt+Shift+drag → resize
+    else if (e.altKey && e.shiftKey) {
+      resize = true;
+      startX = e.clientX; startY = e.clientY;
+      startW = el.offsetWidth; startH = el.offsetHeight;
+      el.style.cursor = "nwse-resize";
+      e.preventDefault();
+    }
   });
 
   document.addEventListener("mousemove", (e) => {
-    if (!drag) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    el.style.left = (startLeft + dx) + "px";
-    el.style.top  = (startTop + dy) + "px";
+    if (drag) {
+      el.style.left = (startLeft + e.clientX - startX) + "px";
+      el.style.top  = (startTop  + e.clientY - startY) + "px";
+    } else if (resize) {
+      el.style.width  = Math.max(20, startW + e.clientX - startX) + "px";
+      el.style.height = Math.max(12, startH + e.clientY - startY) + "px";
+    }
   });
 
   document.addEventListener("mouseup", () => {
-    if (!drag) return;
-    drag = false;
+    if (!drag && !resize) return;
     el.style.cursor = "";
+    drag = false;
+    resize = false;
 
-    // Recompute percentages
     const wrapW = parseFloat(wrap.style.width);
     const wrapH = parseFloat(wrap.style.height);
-    el.dataset.xPct = (el.offsetLeft / wrapW).toFixed(4);
-    el.dataset.yPct = (el.offsetTop  / wrapH).toFixed(4);
+
+    const xPct = el.offsetLeft / wrapW;
+    const yPct = el.offsetTop  / wrapH;
+    const wPct = el.offsetWidth / wrapW;
+    const hPct = el.offsetHeight / wrapH;
+
+    el.dataset.xPct = xPct.toFixed(4);
+    el.dataset.yPct = yPct.toFixed(4);
+    el.dataset.wPct = wPct.toFixed(4);
+    el.dataset.hPct = hPct.toFixed(4);
+
+    // Persist in DEFAULT_FIELDS so it survives re-render
+    const id = el.dataset.fieldId;
+    if (id && DEFAULT_FIELDS[id]) {
+      DEFAULT_FIELDS[id].xPct = parseFloat(xPct.toFixed(4));
+      DEFAULT_FIELDS[id].yPct = parseFloat(yPct.toFixed(4));
+      DEFAULT_FIELDS[id].wPct = parseFloat(wPct.toFixed(4));
+      DEFAULT_FIELDS[id].hPct = parseFloat(hPct.toFixed(4));
+      saveCoords();
+      document.getElementById("status").textContent = `📍 ${id} repositioned & saved`;
+    }
   });
 }
 
 /* ============================================================
-   ADD CUSTOM DRAGGABLE TEXT
+   CUSTOM DRAGGABLE TEXT BOX
 ============================================================ */
 document.getElementById("addCustomBtn").addEventListener("click", () => {
   const text = document.getElementById("customText").value.trim();
   const pageIdx = parseInt(document.getElementById("customPage").value, 10);
-
   if (!text) { alert("Please type some text first."); return; }
 
   const wraps = document.querySelectorAll(".pdf-page-wrap");
@@ -218,8 +271,6 @@ document.getElementById("addCustomBtn").addEventListener("click", () => {
   box.contentEditable = true;
   box.textContent = text;
   box.dataset.page = pageIdx;
-
-  // Default position: middle of page
   box.style.left = "100px";
   box.style.top  = "100px";
 
@@ -233,10 +284,17 @@ document.getElementById("addCustomBtn").addEventListener("click", () => {
   });
   box.appendChild(del);
 
-  // Drag anywhere on the box (except delete button)
+  makeCustomDraggable(box, wrap);
+
+  wrap.appendChild(box);
+  customOverlays.push({ el: box, page: pageIdx });
+  document.getElementById("customText").value = "";
+});
+
+function makeCustomDraggable(box, wrap) {
   let dragging = false, sx, sy, sl, st;
   box.addEventListener("mousedown", (e) => {
-    if (e.target === del) return;
+    if (e.target.classList.contains("delete-btn")) return;
     dragging = true;
     sx = e.clientX; sy = e.clientY;
     sl = box.offsetLeft; st = box.offsetTop;
@@ -251,21 +309,16 @@ document.getElementById("addCustomBtn").addEventListener("click", () => {
   document.addEventListener("mouseup", () => {
     if (!dragging) return;
     dragging = false;
-    box.style.cursor = "move";
 
     const wrapW = parseFloat(wrap.style.width);
     const wrapH = parseFloat(wrap.style.height);
     box.dataset.xPct = (box.offsetLeft / wrapW).toFixed(4);
     box.dataset.yPct = (box.offsetTop  / wrapH).toFixed(4);
   });
-
-  wrap.appendChild(box);
-  customOverlays.push({ el: box, page: pageIdx });
-  document.getElementById("customText").value = "";
-});
+}
 
 /* ============================================================
-   APPLY (Generate filled PDF with pdf-lib)
+   APPLY (Draw text into PDF with pdf-lib)
 ============================================================ */
 document.getElementById("fillBtn").addEventListener("click", async () => {
   if (!pdfBytes) return;
@@ -274,35 +327,40 @@ document.getElementById("fillBtn").addEventListener("click", async () => {
   const pdf = await PDFDocument.load(pdfBytes);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
 
-  // Helper to draw text on a page
-  function draw(pageIndex, xPct, yPct, wPct, text, pageW, pageH) {
-    const x = xPct * pageW;
-    const yTop = yPct * pageH;
+  // ---------- Precise draw function ----------
+  function drawOnPage(pageIdx, xPct, yTopPct, wPct, hPct, text) {
+    const page = pdf.getPage(pageIdx);
+    const { width: pageW, height: pageH } = page.getSize();
+
+    const boxX = xPct * pageW;
+    const boxTop = yTopPct * pageH;           // top edge in PDF coords (from top)
     const boxW = wPct * pageW;
+    const boxH = hPct * pageH;
 
-    // Convert top-based Y to bottom-based Y (PDF origin is bottom-left)
-    // Approximate baseline: place text at 70% of the box height from top
-    const y = pageH - yTop - 10;
+    // Baseline: place text so it fits nicely inside box.
+    // Use ~78% of box height as baseline offset from top.
+    const baselineY = pageH - boxTop - boxH * 0.78;
 
-    // Auto-shrink font if text is too wide
-    let fontSize = 9;
+    // Font size: start with hPct * pageH * 0.85, shrink if too wide
+    let fontSize = Math.min(boxH * 0.85, 11);
+    if (fontSize < 6) fontSize = 6;
+
     let textWidth = font.widthOfTextAtSize(text, fontSize);
     while (textWidth > boxW - 4 && fontSize > 5) {
-      fontSize -= 0.5;
+      fontSize -= 0.25;
       textWidth = font.widthOfTextAtSize(text, fontSize);
     }
 
-    const page = pdf.getPage(pageIndex);
     page.drawText(text, {
-      x: x + 2,
-      y: y,
+      x: boxX + 2,
+      y: baselineY,
       size: fontSize,
       font: font,
       color: rgb(0, 0, 0),
     });
   }
 
-  // 1) Draw sidebar-driven fields
+  // 1) Sidebar-driven fields
   for (const [id, input] of Object.entries(overlays)) {
     const text = (input.value || "").trim();
     if (!text) continue;
@@ -311,30 +369,28 @@ document.getElementById("fillBtn").addEventListener("click", async () => {
     const xPct = parseFloat(input.dataset.xPct);
     const yPct = parseFloat(input.dataset.yPct);
     const wPct = parseFloat(input.dataset.wPct);
+    const hPct = parseFloat(input.dataset.hPct);
 
-    const page = pdf.getPage(pageIdx);
-    const { width, height } = page.getSize();
-    draw(pageIdx, xPct, yPct, wPct, text, width, height);
+    drawOnPage(pageIdx, xPct, yPct, wPct, hPct, text);
   }
 
-  // 2) Draw custom draggable text boxes
+  // 2) Custom draggable text
   for (const { el, page: pageIdx } of customOverlays) {
     const text = (el.textContent || "").trim();
     if (!text) continue;
 
-    const xPct = parseFloat(el.dataset.xPct || el.style.left.replace("px","") / 1);
-    const yPct = parseFloat(el.dataset.yPct || el.style.top.replace("px","") / 1);
-
-    // If percentages missing, compute from current position
     const wrap = el.parentElement;
     const wrapW = parseFloat(wrap.style.width);
     const wrapH = parseFloat(wrap.style.height);
-    const realX = parseFloat(el.dataset.xPct) || (el.offsetLeft / wrapW);
-    const realY = parseFloat(el.dataset.yPct) || (el.offsetTop  / wrapH);
 
-    const page = pdf.getPage(pageIdx);
-    const { width, height } = page.getSize();
-    draw(pageIdx, realX, realY, 0.5, text, width, height);
+    const xPct = parseFloat(el.dataset.xPct) || (el.offsetLeft / wrapW);
+    const yPct = parseFloat(el.dataset.yPct) || (el.offsetTop  / wrapH);
+
+    // use box dimensions as height ratio
+    const wPct = 0.5;
+    const hPct = (el.offsetHeight / wrapH) || 0.02;
+
+    drawOnPage(pageIdx, xPct, yPct, wPct, hPct, text);
   }
 
   const bytes = await pdf.save();
@@ -343,19 +399,13 @@ document.getElementById("fillBtn").addEventListener("click", async () => {
   document.getElementById("saveBtn").disabled = false;
   document.getElementById("status").textContent = "✅ PDF updated — click Download";
 
-  // Re-render preview with the filled PDF
+  // Refresh preview
   pdfBytes = bytes.buffer.slice(0);
   pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
   await renderAll();
   attachDefaultOverlays();
-  reattachCustomBoxes();
-});
-
-function reattachCustomBoxes() {
-  // Custom overlays are lost on re-render, so we simply re-create empty ones.
-  // (Because we already burned them into the PDF.)
   customOverlays = [];
-}
+});
 
 /* ============================================================
    DOWNLOAD
@@ -374,7 +424,7 @@ document.getElementById("saveBtn").addEventListener("click", () => {
 });
 
 /* ============================================================
-   RESET / NEW UPLOAD
+   RESET
 ============================================================ */
 document.getElementById("resetBtn").addEventListener("click", () => {
   pdfBytes = null;
@@ -386,14 +436,18 @@ document.getElementById("resetBtn").addEventListener("click", () => {
   document.getElementById("saveBtn").disabled = true;
   document.getElementById("status").textContent = "Ready";
 
-  // Clear sidebar inputs
   document.querySelectorAll(".sidebar-body input, .sidebar-body textarea").forEach(el => el.value = "");
 
-  // Back to upload screen
   document.getElementById("editorScreen").style.display = "none";
   document.getElementById("uploadScreen").style.display = "flex";
   uploadInput.value = "";
 });
+
+/* Reset field positions button (add to sidebar separately if needed) */
+function resetFieldPositions() {
+  localStorage.removeItem("pdfFieldCoords");
+  location.reload();
+}
 
 /* ============================================================
    ZOOM
