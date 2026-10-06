@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDF Form Filler — Upload, Fill & Download</title>
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+</head>
+<body>
+
+<!-- UPLOAD SCREEN -->
+<div id="uploadScreen" class="upload-screen">
+  <div class="upload-card">
+    <div class="upload-icon">📄</div>
+    <h1>PDF Form Filler</h1>
+    <p class="upload-sub">Upload your blank PDF form, fill it, and download the filled version.</p>
+
+    <label for="pdfUpload" class="upload-btn">
+      <span>📁 Choose PDF File</span>
+      <input type="file" id="pdfUpload" accept="application/pdf" hidden />
+    </label>
+
+    <div id="dropZone" class="drop-zone">
+      <p>or drag &amp; drop your PDF here</p>
+    </div>
+
+    <p class="upload-note">🔒 100% private — everything runs in your browser</p>
+  </div>
+</div>
+
+<!-- EDITOR SCREEN -->
+<div id="editorScreen" class="app" style="display:none;">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">📄</span>
+        <span class="logo-text">Form Filler</span>
+      </div>
+      <p class="subtitle" id="fileName">document.pdf</p>
+    </div>
+
+    <div class="sidebar-body">
+      <div class="section">
+        <h3>👤 Personal Details</h3>
+        <label>Full Name
+          <input type="text" id="name" placeholder="Enter full name" />
+        </label>
+        <label>Address
+          <textarea id="address" rows="2" placeholder="Enter address"></textarea>
+        </label>
+        <label>Email
+          <input type="email" id="email" placeholder="email@example.com" />
+        </label>
+        <label>Mobile
+          <input type="text" id="phone" placeholder="10-digit number" />
+        </label>
+        <label>PAN No.
+          <input type="text" id="pan" placeholder="ABCDE1234F" style="text-transform:uppercase" />
+        </label>
+      </div>
+
+      <div class="section">
+        <h3>🏦 Depository Details</h3>
+        <label>DP ID / Client ID
+          <input type="text" id="dpid" placeholder="16-digit ID" />
+        </label>
+      </div>
+
+      <div class="section">
+        <h3>📊 Bid Options</h3>
+        <label>No. of Equity Shares
+          <input type="number" id="opt1_shares" placeholder="50" />
+        </label>
+        <label>Bid Price (₹)
+          <input type="number" id="opt1_price" placeholder="300" />
+        </label>
+      </div>
+
+      <div class="section">
+        <h3>💰 Payment Details</h3>
+        <label>Amount Blocked (Figures)
+          <input type="number" id="amount_fig" placeholder="15000" />
+        </label>
+        <label>Amount Blocked (Words)
+          <input type="text" id="amount_words" placeholder="FIFTEEN THOUSAND ONLY" />
+        </label>
+        <label>ASBA Bank A/c No.
+          <input type="text" id="asba_ac" placeholder="Account number" />
+        </label>
+        <label>Bank Name &amp; Branch
+          <input type="text" id="bank_name" placeholder="Bank name and branch" />
+        </label>
+      </div>
+
+      <div class="section">
+        <h3>🧾 Sole / First Holder</h3>
+        <label>Name of Sole / First Holder
+          <input type="text" id="holder_name" placeholder="Holder name" />
+        </label>
+      </div>
+
+      <div class="section">
+        <h3>✏️ Custom Text Box</h3>
+        <label>Add your own text anywhere on PDF
+          <div class="custom-row">
+            <input type="text" id="customText" placeholder="Type any text" />
+            <select id="customPage"></select>
+            <button id="addCustomBtn" type="button">➕</button>
+          </div>
+        </label>
+        <p class="hint">Yeh text drag karke kisi bhi position par rakh sakte hain.</p>
+      </div>
+
+      <button id="fillBtn" class="btn-primary">⚡ Apply to PDF</button>
+      <button id="saveBtn" class="btn-secondary" disabled>💾 Download Filled PDF</button>
+      <button id="resetBtn" class="btn-ghost">🔄 Reset / Upload New</button>
+    </div>
+  </aside>
+
+  <main class="viewer">
+    <div class="viewer-toolbar">
+      <span id="status">Ready</span>
+      <div class="zoom-controls">
+        <button id="zoomOut">−</button>
+        <span id="zoomVal">100%</span>
+        <button id="zoomIn">+</button>
+      </div>
+    </div>
+    <div class="pdf-container">
+      <div id="pdfViewer"></div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
